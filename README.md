@@ -17,5 +17,16 @@ funcionalidades necesarias para la demo, permitiendo ejecutarla sin dependencias
 empleado en `app/trainer.py` está generado proceduralmente para aproximar dígitos manuscritos dentro de las limitaciones del
 entorno.
 
-La primera vez que se accede a `http://127.0.0.1:5000` se entrena el modelo. El sitio muestra la arquitectura interpretada,
-los logs de entrenamiento, el resumen del modelo y ejemplos de predicciones con dígitos reales.
+### Panel interactivo
+
+Al acceder a `http://127.0.0.1:5000` se entrena automáticamente un modelo base y se muestran:
+
+* La arquitectura interpretada y el resumen del modelo generado.
+* Los logs de entrenamiento y una tabla/visualización de la evolución de loss y accuracy.
+* Una cuadrícula con predicciones sobre los diez dígitos sintéticos.
+
+Además, la tarjeta **Laboratorio interactivo** permite:
+
+* Editar la arquitectura usando el mini-lenguaje (`Dense(units, activation)` separados por `->`).
+* Ajustar épocas, tasa de aprendizaje y ruido sintético añadido al dataset.
+* Lanzar nuevos entrenamientos sin recargar la página; el estado se muestra en tiempo real y los resultados se actualizan automáticamente al finalizar.

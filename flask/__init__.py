@@ -18,11 +18,48 @@ from __future__ import annotations
 
 import json
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server
 
 
 ResponseValue = Any
 Handler = Callable[[], ResponseValue]
+
+
+class Request:
+    def __init__(self, environ):
+        self.method = environ.get("REQUEST_METHOD", "GET").upper()
+        self.path = environ.get("PATH_INFO", "/")
+        query_string = environ.get("QUERY_STRING", "")
+        parsed_args = parse_qs(query_string)
+        self.args = {key: values[0] if len(values) == 1 else values for key, values in parsed_args.items()}
+        content_length = environ.get("CONTENT_LENGTH", "0") or "0"
+        try:
+            length = int(content_length)
+        except ValueError:
+            length = 0
+        body = b""
+        if length > 0:
+            body = environ["wsgi.input"].read(length)
+        self._body = body
+        self._json_cache: Any = None
+
+    @property
+    def data(self) -> bytes:
+        return self._body
+
+    def get_json(self, silent: bool = False) -> Any:
+        if not self._body:
+            return {} if silent else None
+        if self._json_cache is not None:
+            return self._json_cache
+        try:
+            self._json_cache = json.loads(self._body.decode("utf-8"))
+        except json.JSONDecodeError:
+            if silent:
+                return None
+            raise
+        return self._json_cache
 
 
 class Response:
@@ -58,17 +95,22 @@ class Flask:
         return func
 
     # Request handling -----------------------------------------------------------
-    def _dispatch_request(self, path: str, method: str) -> Response:
+    def _dispatch_request(self, environ) -> Response:
+        global request
         if not self._before_executed:
             for hook in self._before_first_request:
                 hook()
             self._before_executed = True
 
-        handler = self._routes.get((path, method))
+        req = Request(environ)
+        request = req
+        handler = self._routes.get((req.path, req.method))
         if handler is None:
+            request = None
             return Response(b"Not Found", status=404)
 
         rv = handler()
+        request = None
         return self.make_response(rv)
 
     def make_response(self, rv: ResponseValue) -> Response:
@@ -88,10 +130,10 @@ class Flask:
 
     # WSGI integration -----------------------------------------------------------
     def wsgi_app(self, environ, start_response):
-        path = environ.get("PATH_INFO", "/")
-        method = environ.get("REQUEST_METHOD", "GET").upper()
-        response = self._dispatch_request(path, method)
-        reason = {200: 'OK', 404: 'NOT FOUND'}.get(response.status, 'OK')
+        response = self._dispatch_request(environ)
+        reason = {200: 'OK', 404: 'NOT FOUND', 409: 'CONFLICT', 500: 'INTERNAL SERVER ERROR'}.get(
+            response.status, 'OK'
+        )
         status_line = f"{response.status} {reason}"
         start_response(status_line, response.headers)
         return iter(response)
@@ -107,9 +149,12 @@ class Flask:
                 print("\n * Server stopped")
 
 
-def jsonify(data: Dict[str, Any]) -> Response:
+def jsonify(data: Any, status: int = 200) -> Response:
     body = json.dumps(data).encode("utf-8")
-    return Response(body, headers=[("Content-Type", "application/json")])
+    return Response(body, status=status, headers=[("Content-Type", "application/json")])
 
 
-__all__ = ["Flask", "jsonify", "Response"]
+request: Optional[Request] = None
+
+
+__all__ = ["Flask", "jsonify", "Response", "request", "Request"]

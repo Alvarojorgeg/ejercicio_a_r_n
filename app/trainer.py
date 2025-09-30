@@ -29,6 +29,9 @@ class TrainingArtifacts:
     training_log: str
     summary: str
     examples: List[PredictionExample]
+    epochs: int
+    learning_rate: float
+    noise: float
 
 
 DEFAULT_ARCHITECTURE = "Dense(16, relu) -> Dense(16, relu) -> Dense(10, softmax)"
@@ -149,13 +152,20 @@ def _scale_pattern(pattern: List[str], scale: int = 2, target_size: int = 14) ->
     return flat
 
 
-def _build_dataset() -> Tuple[List[List[float]], List[int]]:
+def _build_dataset(noise: float = 0.0) -> Tuple[List[List[float]], List[int]]:
     samples: List[List[float]] = []
     labels: List[int] = []
     for digit, pattern in _DIGIT_PATTERNS.items():
         vector = _scale_pattern(pattern)
         for _ in range(20):
-            samples.append(list(vector))
+            if noise > 0:
+                jittered = []
+                for value in vector:
+                    jitter = random.uniform(-noise, noise)
+                    jittered.append(min(1.0, max(0.0, value + jitter)))
+                samples.append(jittered)
+            else:
+                samples.append(list(vector))
             labels.append(digit)
     return samples, labels
 
@@ -263,7 +273,13 @@ def _update_parameters(weights, biases, grads_w, grads_b, learning_rate):
                 weights[layer_idx][neuron_idx][weight_idx] -= learning_rate * grads_w[layer_idx][neuron_idx][weight_idx]
 
 
-def _train(model: SequentialModel, samples: List[List[float]], labels: List[int], epochs: int = 30, learning_rate: float = 0.05):
+def _train(
+    model: SequentialModel,
+    samples: List[List[float]],
+    labels: List[int],
+    epochs: int = 30,
+    learning_rate: float = 0.05,
+):
     weights, biases = _initialize_parameters(model)
     history: List[Tuple[float, float]] = []
     for epoch in range(epochs):
@@ -299,10 +315,21 @@ def _format_history(history: List[Tuple[float, float]]) -> str:
     return "\n".join(lines)
 
 
-def train_mnist(architecture: str = DEFAULT_ARCHITECTURE, epochs: int = 20) -> TrainingArtifacts:
+def train_mnist(
+    architecture: str = DEFAULT_ARCHITECTURE,
+    epochs: int = 20,
+    learning_rate: float = 0.05,
+    noise: float = 0.0,
+) -> TrainingArtifacts:
     model = compile_model(architecture, input_dim=INPUT_DIM)
-    samples, labels = _build_dataset()
-    weights, biases, history = _train(model, samples, labels, epochs=epochs)
+    samples, labels = _build_dataset(noise=noise)
+    weights, biases, history = _train(
+        model,
+        samples,
+        labels,
+        epochs=epochs,
+        learning_rate=learning_rate,
+    )
     loss, acc = history[-1]
 
     # Build prediction examples using one instance per digit
@@ -322,7 +349,12 @@ def train_mnist(architecture: str = DEFAULT_ARCHITECTURE, epochs: int = 20) -> T
         )
 
     summary = model.summary()
-    training_log = _format_history(history)
+    training_log = "\n".join(
+        [
+            f"Configuración: epochs={epochs}, learning_rate={learning_rate:.4f}, noise={noise:.2f}",
+            _format_history(history),
+        ]
+    )
     evaluation = (loss, acc)
 
     return TrainingArtifacts(
@@ -335,6 +367,9 @@ def train_mnist(architecture: str = DEFAULT_ARCHITECTURE, epochs: int = 20) -> T
         training_log=training_log,
         summary=summary,
         examples=examples,
+        epochs=epochs,
+        learning_rate=learning_rate,
+        noise=noise,
     )
 
 
