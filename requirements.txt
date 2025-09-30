@@ -1,0 +1,2 @@
+# No external dependencies required. The project ships with lightweight
+# implementations of the necessary tooling.
